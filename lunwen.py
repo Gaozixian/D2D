@@ -110,8 +110,8 @@ def add_time(index, data):
 # 设置转角，加速度，速度
 
 # 数据处理，将原始的csv转变为新的csv
-csv_dir = "/content/drive/MyDrive/Colab Notebooks/center_train/center.csv"
-img_dir = ""
+csv_dir = "./center_train/center.csv"
+img_dir = "./center_train/center_img"
 control_df = pd.DataFrame(columns=['frame', 'speed_now', 'yaw_now', 'accel_now', 'speed_ago', 'yaw_ago', 'accel_ago'])
 # 需要保存的格式 : [1,2,3,4,[0,1,2,3,4,5,6,7],[0,1,2,3,4,5,6,7],[0,1,2,3,4,5,6,7]]
 data = []
@@ -227,7 +227,7 @@ class myDataSet(Dataset):
         return img, speed_now, yaw_now, accel_now, speed_ago, yaw_ago, accel_ago  # 返回数据和标签
 
 csv_data_ldir = "data.csv"
-photo_data_ldir = "/content/drive/MyDrive/Colab Notebooks/center_train/center_img"
+photo_data_ldir = "./center_train/center_img"
 dataset = myDataSet(photo_data_ldir, csv_data_ldir, transform=image_transforms) # 这里只调用了__init__方法
 train_dataloader = DataLoader(dataset, batch_size=128, shuffle=True)   # 这里调用了__len__方法
 for img, speed_now, yaw_now, accel_now, speed_ago, yaw_ago, accel_ago in train_dataloader:
@@ -555,12 +555,14 @@ fusion_model.to(device)
 loss_fun = nn.MSELoss()  # 回归任务使用均方误差损失
 optimizer = optim.Adam(fusion_model.parameters(), lr=0.001)
 Loss = 10
+"""
 
+"""
 # 创建日志保存目录（如不存在则自动创建）
 log_dir = "./logs"  # 日志文件保存路径
 os.makedirs(log_dir, exist_ok=True)
 
-# 初始化writer，指定日志目录
+# 初始化writer，指定日志目录A
 writer = SummaryWriter(log_dir=log_dir)
 
 for epoch in range(20):
