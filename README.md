@@ -17,4 +17,3 @@ cd ~/carla/Unreal/CarlaUE4  # 进入carla目录
 
 ```python
 ```
-1. 启动carla
