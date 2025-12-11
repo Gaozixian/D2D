@@ -1,0 +1,25 @@
+batch_size: 32
+epochs: 50
+lr: 0.001
+patience: 5
+val_ratio: 0.2
+load_pretrained: true  # 布尔值
+
+input_size: 3
+hidden_size: 50
+num_layers: 2
+output_size: 1
+drop_out: 0.3
+seq_length: 10
+
+original_data_path: "./driving_log.csv"
+data_path: "./sample_data.csv"
+model_path: "./best_lstm_model.pth"
+result_path: "./speed_prediction_results.csv"
+
+# 支持列表/嵌套（适合多特征配置）
+# 控制信息内容
+input_features: ['speed_kmh', 'throttle', 'brake']  # 列表
+target_feature: ['throttle', 'brake', 'yaw']
+
+# visual信息内容
