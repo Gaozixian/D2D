@@ -43,7 +43,7 @@ data = [
 ]
 
 # 指定CSV文件路径
-csv_file = 'sample_data.csv'
+csv_file = '../sample_data.csv'
 
 # 写入CSV文件
 with open(csv_file, 'w', newline='', encoding='utf-8') as file:
@@ -110,8 +110,8 @@ def add_time(index, data):
 # 设置转角，加速度，速度
 
 # 数据处理，将原始的csv转变为新的csv
-csv_dir = "./center_train/center.csv"
-img_dir = "./center_train/center_img"
+csv_dir = "../center_train/center.csv"
+img_dir = "../center_train/center_img"
 control_df = pd.DataFrame(columns=['frame', 'speed_now', 'yaw_now', 'accel_now', 'speed_ago', 'yaw_ago', 'accel_ago'])
 # 需要保存的格式 : [1,2,3,4,[0,1,2,3,4,5,6,7],[0,1,2,3,4,5,6,7],[0,1,2,3,4,5,6,7]]
 data = []
@@ -559,7 +559,7 @@ Loss = 10
 
 """
 # 创建日志保存目录（如不存在则自动创建）
-log_dir = "./logs"  # 日志文件保存路径
+log_dir = "../logs"  # 日志文件保存路径
 os.makedirs(log_dir, exist_ok=True)
 
 # 初始化writer，指定日志目录A
