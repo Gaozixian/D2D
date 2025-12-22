@@ -4,7 +4,7 @@ import json
 from typing import Dict, Any
 
 
-class DrivingDataNormalizer:
+class dataNormalizer:
     def __init__(self, file_path):
         """初始化：读取驾驶日志数据并筛选数值列"""
         self.df = pd.read_csv(file_path)
@@ -107,7 +107,7 @@ class DrivingDataNormalizer:
                     original_max - original_min) + original_min
         return original_val
 
-class Normalizer:
+class inverseNormalizer:
     def __init__(self, params_path="normalize_params.json"):
         """初始化：加载归一化参数"""
         with open(params_path, "r", encoding="utf-8") as f:
@@ -128,7 +128,7 @@ class Normalizer:
 if __name__ == "__main__":
     # 1. 加载数据
     data_path = '../LSTM/driving_log.csv'
-    normalizer = DrivingDataNormalizer(file_path=data_path)
+    normalizer = dataNormalizer(file_path=data_path)
     print(f"📊 数据加载完成：共{normalizer.df.shape[0]}行数据，{normalizer.df.shape[1]}列")
     print(f"🎯 待归一化的驾驶特征：{normalizer.normalize_cols}")
 
@@ -162,6 +162,6 @@ if __name__ == "__main__":
     normalizer.save_results(df_norm=df_final)
 
     # 6. 反归一化
-    normalizer = Normalizer()
+    normalizer = inverseNormalizer()
     # 还原转向角
     print(normalizer.inverse_min_max(0.53604, "steer"))  # 输出：0.0

@@ -186,7 +186,7 @@ class TemporalResNetCBAM(nn.Module):
     """时序ResNet_CBAM网络 - 处理三张时序图像"""
     
     def __init__(self, 
-                 use_shared_weights=True,
+                 use_shared_weights=True, # 共享权重的参数
                  d_model=512,
                  num_heads=8,
                  num_layers=6,
