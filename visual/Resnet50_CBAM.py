@@ -176,10 +176,8 @@ class ResNet(nn.Module):
 def resnet50_cbam(pretrained=False, **kwargs):
     """
     创建预训练的ResNet50+CBAM模型
-
     Args:
         pretrained (bool): 如果为True，返回在ImageNet上预训练的模型
-
     Returns:
         nn.Module: ResNet50+CBAM模型
     """
