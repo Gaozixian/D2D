@@ -40,7 +40,7 @@ def init_save_directory():
 def init_csv_writer():
     """初始化CSV文件写入器"""
     global csv_writer, csv_file
-    csv_path = os.path.join(SAVE_ROOT, "csv/vehicle_data.csv")
+    csv_path = os.path.join(SAVE_ROOT, "csv/global_vehicle_data.csv")
     csv_file = open(csv_path, "w", newline="", encoding="utf-8")
     # CSV表头：时间戳+图像路径+车辆状态+底盘控制信息
     fieldnames = [

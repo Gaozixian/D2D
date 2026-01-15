@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from threading import Lock
 
+
 class CarlaDataCollector:
     def __init__(self, client, vehicle, save_root="carla_data_collect", camera_res=(640, 480), sensor_tick=0.1):
         """
@@ -34,6 +35,7 @@ class CarlaDataCollector:
             "left_image": None, "right_image": None
         }
         self.vehicle_data = {}
+        self.dimensions = {}
         self.data_lock = Lock()
         self.cameras = []  # 存储摄像头Actor，用于后续销毁
 
@@ -48,7 +50,7 @@ class CarlaDataCollector:
 
     def _init_csv_writer(self):
         """初始化CSV写入器"""
-        csv_path = os.path.join(self.save_root, "csv/vehicle_data.csv")
+        csv_path = os.path.join(self.save_root, "csv/global_vehicle_data.csv")
         csv_file = open(csv_path, "w", newline="", encoding="utf-8")
         fieldnames = [
             "timestamp",
@@ -116,14 +118,51 @@ class CarlaDataCollector:
             self.image_save_paths = {k: None for k in self.image_save_paths.keys()}
             print(f"成功保存数据：时间戳={save_data['timestamp']:.2f} | 车速={save_data['speed_kmh']:.1f} km/h")
 
+    def _get_vehicle_dimensions(self):
+        if not self.vehicle or not self.vehicle.is_alive:
+            return {}
+        length = float(self.vehicle.attributes.get('length', 0.0))
+        width = float(self.vehicle.attributes.get('width', 0.0))
+        height = float(self.vehicle.attributes.get('height', 0.0))
+        self.dimensions = {
+            "length": length, "width": width, "height": height
+        }
+
+
     def spawn_cameras(self):
         """挂载前后左右四个摄像头"""
         # 摄像头配置：方向、挂载位置、旋转角度
+        self._get_vehicle_dimensions()
+        # length = self.dimensions['length']
+        # width = self.dimensions['width']
+        # height = self.dimensions['height']
+        bounding_box = self.vehicle.bounding_box
+        # 包围盒的 extent 是半长/半宽/半高，因此需要乘以 2 得到实际尺寸
+        length = bounding_box.extent.x * 2.0  # 长度（X轴）
+        width = bounding_box.extent.y * 2.0   # 宽度（Y轴）
+        height = bounding_box.extent.z * 2.0  # 高度（Z轴）
+        print(length, width, height)
+        front_distance = length / 2 + 0.5
+        back_distance = length / 2 + 0.5
+        camera_height = height * 1.2
+        side_distance = width / 2 + 0.1
         camera_configs = [
-            ("front", carla.Transform(carla.Location(x=2.0, z=1.8)), carla.Rotation(pitch=0)),
-            ("back", carla.Transform(carla.Location(x=-2.0, z=1.8)), carla.Rotation(pitch=0, yaw=180)),
-            ("left", carla.Transform(carla.Location(y=1.0, z=1.8)), carla.Rotation(pitch=0, yaw=-90)),
-            ("right", carla.Transform(carla.Location(y=-1.0, z=1.8)), carla.Rotation(pitch=0, yaw=90))
+            ("front", carla.Transform(
+                carla.Location(x=front_distance, z=camera_height),
+                carla.Rotation(pitch=0)
+            )),
+            ("back", carla.Transform(
+                carla.Location(x=-back_distance, z=camera_height),
+                carla.Rotation(pitch=0, yaw=180)
+            )),
+            ("left", carla.Transform(
+                carla.Location(y=side_distance, z=camera_height),
+                carla.Rotation(pitch=0, yaw=-90)
+            )),
+            ("right", carla.Transform(
+                carla.Location(y=-side_distance, z=camera_height),
+                carla.Rotation(pitch=0, yaw=90)
+            ))
         ]
         # 创建摄像头蓝图
         camera_bp = self.blueprint_library.find("sensor.camera.rgb")
@@ -132,8 +171,7 @@ class CarlaDataCollector:
         camera_bp.set_attribute("fov", "90")
         camera_bp.set_attribute("sensor_tick", str(self.sensor_tick))
         # 生成摄像头并注册回调
-        for direction, transform, rotation in camera_configs:
-            transform.rotation = rotation
+        for direction, transform in camera_configs:
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=self.vehicle)
             camera.listen(lambda image, d=direction: self._process_image(image, d))
             self.cameras.append(camera)
