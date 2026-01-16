@@ -20,8 +20,8 @@ import os
 
 # 设置中文字体支持
 matplotlib.use("Agg")
-plt.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "WenQuanYi Zen Hei", "PingFang SC", "Arial Unicode MS"]
-plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["font.sans-serif"] = ["SimHei"]  # 使用黑体
+plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
 
 # 颜色方案
 PATH_COLORS = {
@@ -97,7 +97,7 @@ def calculate_path_length(df):
     return total_length
 
 
-def plot_two_paths_2d(df1, df2, label1="路径1", label2="路径2",
+def plot_two_paths_2d(df1, df2, label1="reference_path", label2="recorded_path",
                       output_file="two_paths_2d.png", title="双路径对比 2D视图",
                       figsize=(14, 10), point_size=30, line_width=2.5,
                       show_numbers=False, alpha_path=0.7):
@@ -119,26 +119,26 @@ def plot_two_paths_2d(df1, df2, label1="路径1", label2="路径2",
     """
     fig, ax = plt.subplots(figsize=figsize)
 
-    # 绘制路径1
+    # 绘制reference_path
     ax.plot(df1['global_x'], df1['global_y'], color=PATH_COLORS['path1'], linewidth=line_width,
             alpha=alpha_path, label=label1, linestyle='-')
     ax.scatter(df1['global_x'], df1['global_y'], c=[PATH_COLORS['path1']], s=point_size,
               edgecolors='white', linewidth=0.5, zorder=5, alpha=0.8)
 
-    # 绘制路径2
+    # 绘制recorded_path
     ax.plot(df2['global_x'], df2['global_y'], color=PATH_COLORS['path2'], linewidth=line_width,
             alpha=alpha_path, label=label2, linestyle='--')
     ax.scatter(df2['global_x'], df2['global_y'], c=[PATH_COLORS['path2']], s=point_size,
               edgecolors='white', linewidth=0.5, zorder=5, alpha=0.8)
 
     # 标记起点和终点
-    # 路径1
+    # reference_path
     ax.scatter(df1['global_x'].iloc[0], df1['global_y'].iloc[0], c='green', s=200,
               marker='o', zorder=10, edgecolors='black', linewidth=2)
     ax.scatter(df1['global_x'].iloc[-1], df1['global_y'].iloc[-1], c='darkgreen', s=200,
               marker='s', zorder=10, edgecolors='black', linewidth=2)
 
-    # 路径2
+    # recorded_path
     ax.scatter(df2['global_x'].iloc[0], df2['global_y'].iloc[0], c='orange', s=200,
               marker='o', zorder=10, edgecolors='black', linewidth=2)
     ax.scatter(df2['global_x'].iloc[-1], df2['global_y'].iloc[-1], c='darkorange', s=200,
@@ -150,9 +150,11 @@ def plot_two_paths_2d(df1, df2, label1="路径1", label2="路径2",
         Line2D([0], [0], color=PATH_COLORS['path1'], linewidth=2, label=f'{label1}'),
         Line2D([0], [0], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label=f'{label2}'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=12,
-               markeredgecolor='black', label='路径起点'),
+               markeredgecolor='black', label=f'{label1}起点'),
         Line2D([0], [0], marker='s', color='w', markerfacecolor='darkgreen', markersize=12,
                markeredgecolor='black', label=f'{label1}终点'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='darkorange', markersize=12,
+               markeredgecolor='black', label=f'{label2}起点'),
         Line2D([0], [0], marker='s', color='w', markerfacecolor='darkorange', markersize=12,
                markeredgecolor='black', label=f'{label2}终点'),
     ]
@@ -182,16 +184,19 @@ def plot_two_paths_2d(df1, df2, label1="路径1", label2="路径2",
     len2 = calculate_path_length(df2)
 
     stats_text = (f"{label1}:\n"
-                  f"  点数: {len(df1)}\n"
-                  f"  长度: {len1:.1f} m\n\n"
+                  f"Point: {len(df1)}\n"
+                  f"Length: {len1:.1f} m\n\n"
                   f"{label2}:\n"
-                  f"  点数: {len(df2)}\n"
-                  f"  长度: {len2:.1f} m")
+                  f"Point: {len(df2)}\n"
+                  f"Length: {len2:.1f} m")
 
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
            verticalalignment='top', fontsize=10,
            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7),
            family='monospace')
+
+    plt.rcParams['font.sans-serif'] = ['SimHei']
+    plt.rcParams['axes.unicode_minus'] = False  # 设置中文显示
 
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
@@ -201,7 +206,7 @@ def plot_two_paths_2d(df1, df2, label1="路径1", label2="路径2",
     return output_file
 
 
-def plot_two_paths_3d(df1, df2, label1="路径1", label2="路径2",
+def plot_two_paths_3d(df1, df2, label1="reference_path", label2="recorded_path",
                       output_file="two_paths_3d.png", title="双路径对比 3D视图",
                       figsize=(14, 10), point_size=30, line_width=2.5):
     """
@@ -230,13 +235,13 @@ def plot_two_paths_3d(df1, df2, label1="路径1", label2="路径2",
     fig = plt.figure(figsize=figsize)
     ax = fig.add_subplot(111, projection='3d')
 
-    # 绘制路径1
+    # 绘制reference_path
     ax.plot(df1['global_x'], df1['global_y'], df1['z'], color=PATH_COLORS['path1'],
             linewidth=line_width, alpha=0.8, label=label1)
     ax.scatter(df1['global_x'], df1['global_y'], df1['z'], c=[PATH_COLORS['path1']],
               s=point_size, edgecolors='white', linewidth=0.5)
 
-    # 绘制路径2
+    # 绘制recorded_path
     ax.plot(df2['global_x'], df2['global_y'], df2['z'], color=PATH_COLORS['path2'],
             linewidth=line_width, linestyle='--', alpha=0.8, label=label2)
     ax.scatter(df2['global_x'], df2['global_y'], df2['z'], c=[PATH_COLORS['path2']],
@@ -393,9 +398,9 @@ def plot_comparison_with_time(df1, df2, output_file="paths_with_time.png",
     # 1. 左上：路径图
     ax1 = axes[0, 0]
     ax1.plot(df1['global_x'], df1['global_y'], color=PATH_COLORS['path1'], linewidth=2,
-             alpha=0.8, label='路径1')
+             alpha=0.8, label='reference_path')
     ax1.plot(df2['global_x'], df2['global_y'], color=PATH_COLORS['path2'], linewidth=2,
-             linestyle='--', alpha=0.8, label='路径2')
+             linestyle='--', alpha=0.8, label='recorded_path')
     ax1.set_xlabel('X 坐标 (m)')
     ax1.set_ylabel('Y 坐标 (m)')
     ax1.set_title('路径对比')
@@ -414,8 +419,8 @@ def plot_comparison_with_time(df1, df2, output_file="paths_with_time.png",
         time2 = range(len(df2))
         xlabel = '点序号'
 
-    ax2.plot(time1, df1['global_x'], color=PATH_COLORS['path1'], linewidth=2, label='路径1 X')
-    ax2.plot(time2, df2['global_x'], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label='路径2 X')
+    ax2.plot(time1, df1['global_x'], color=PATH_COLORS['path1'], linewidth=2, label='reference_path X')
+    ax2.plot(time2, df2['global_x'], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label='recorded_path X')
     ax2.set_xlabel(xlabel)
     ax2.set_ylabel('X 坐标 (m)')
     ax2.set_title('X坐标随时间变化')
@@ -424,8 +429,8 @@ def plot_comparison_with_time(df1, df2, output_file="paths_with_time.png",
 
     # 3. 左下：Y坐标时间序列
     ax3 = axes[1, 0]
-    ax3.plot(time1, df1['global_y'], color=PATH_COLORS['path1'], linewidth=2, label='路径1 Y')
-    ax3.plot(time2, df2['global_y'], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label='路径2 Y')
+    ax3.plot(time1, df1['global_y'], color=PATH_COLORS['path1'], linewidth=2, label='reference_path Y')
+    ax3.plot(time2, df2['global_y'], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label='recorded_path Y')
     ax3.set_xlabel(xlabel)
     ax3.set_ylabel('Y 坐标 (m)')
     ax3.set_title('Y坐标随时间变化')
@@ -435,8 +440,8 @@ def plot_comparison_with_time(df1, df2, output_file="paths_with_time.png",
     # 4. 右下：速度对比（如果有速度数据）
     ax4 = axes[1, 1]
     if 'velocity' in df1.columns and 'velocity' in df2.columns:
-        ax4.plot(time1, df1['velocity'], color=PATH_COLORS['path1'], linewidth=2, label='路径1 速度')
-        ax4.plot(time2, df2['velocity'], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label='路径2 速度')
+        ax4.plot(time1, df1['velocity'], color=PATH_COLORS['path1'], linewidth=2, label='reference_path 速度')
+        ax4.plot(time2, df2['velocity'], color=PATH_COLORS['path2'], linewidth=2, linestyle='--', label='recorded_path 速度')
         ax4.set_ylabel('速度 (m/s)')
     else:
         ax4.text(0.5, 0.5, '无可用速度数据', ha='center', va='center', fontsize=12)
@@ -456,7 +461,7 @@ def plot_comparison_with_time(df1, df2, output_file="paths_with_time.png",
     return output_file
 
 
-def generate_comprehensive_report(df1, df2, label1="路径1", label2="路径2", output_dir="."):
+def generate_comprehensive_report(df1, df2, label1="reference_path", label2="recorded_path", output_dir="."):
     """
     生成综合分析报告
 
@@ -575,10 +580,10 @@ def main():
     parser.add_argument('--csv2', default='ego_vehicle_data.csv', help='第二个CSV文件路径')
     parser.add_argument('--output', '-o', default='comparison.png',
                        help='输出图片文件名 (默认: comparison.png)')
-    parser.add_argument('--label1', '-l1', default='路径1',
-                       help='第一个路径的标签 (默认: 路径1)')
-    parser.add_argument('--label2', '-l2', default='路径2',
-                       help='第二个路径的标签 (默认: 路径2)')
+    parser.add_argument('--label1', '-l1', default='reference_path',
+                       help='第一个路径的标签 (默认: reference_path)')
+    parser.add_argument('--label2', '-l2', default='recorded_path',
+                       help='第二个路径的标签 (默认: recorded_path)')
     parser.add_argument('--show-numbers', '-n', action='store_true',
                        help='显示点编号')
     parser.add_argument('--output-dir', '-d', default='.',
@@ -643,6 +648,4 @@ def main():
 
 
 if __name__ == "__main__":
-    plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认中文字体
-    plt.rcParams['axes.unicode_minus'] = False  # 解决负号'-'显示为方块的问题
     main()
