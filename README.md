@@ -10,7 +10,7 @@ carla_collect/manual_control.py：carla自带的控制车辆，这里修改了�
 carla_collect/generate_vehicles.py：生成随机车辆
 
 ## carla_location代码文件说明
-location/global_visual.py： 负责绘制两个路径的对比图片
+ipynb： 负责绘制两个路径的对比图片以及转向判定对比图
 
 ## carla_visual代码文件说明
 
