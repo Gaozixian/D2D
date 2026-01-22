@@ -74,7 +74,7 @@ class MyDataset(Dataset):
         # print("speed_now的class：", type(speed_now))  # speed_now的class： <class 'torch.Tensor'>
         # print("input_ago的shape：", input_ago.shape)  # input_ago的shape： torch.Size([9, 3])
         # print("yaw_now的shape：", yaw_now.shape)  # speed_now的shape： torch.Size([1, 1])
-        return input_ago, yaw_now
+        return input_ago, speed_now
 
 
 
@@ -111,22 +111,6 @@ if __name__ == '__main__':
     val_size = int(len(dataset) * val_ratio)
     train_size = len(dataset) - val_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-    # ------------------------------------
-    # 创建DataLoader（批量加载数据）
-    # # 1. 初始化归一化器并使用训练集拟合
-    # normalizer = Normalizer()
-    # # 注意：这里需要用原始数据集的train_dataset部分拟合，因此需要构造临时数据集
-    # # 从原始数据集中提取训练集索引对应的数据
-    # train_indices = train_dataset.indices
-    # train_data_subset = MyDataset('sample_data.csv')  # 临时加载完整数据集
-    # # 用训练集数据拟合归一化器
-    # normalizer.fit(pd.DataFrame(train_data_subset.data.iloc[train_indices]))
-    # # 2. 用拟合好的归一化器重新构造训练集和验证集
-    # train_dataset = MyDataset('sample_data.csv', normalizer=normalizer)
-    # val_dataset = MyDataset('sample_data.csv', normalizer=normalizer)
-    # 重新拆分（保持原索引）
-    # train_dataset = torch.utils.data.Subset(train_dataset, train_indices)
-    # val_dataset = torch.utils.data.Subset(val_dataset, val_dataset.indices)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True)
     print(f"训练集样本数：{len(train_dataset)}，验证集样本数：{len(val_dataset)}")
@@ -149,7 +133,7 @@ if __name__ == '__main__':
             output_truth = output_truth.to(device)
             optimizer.zero_grad()
             out_pre = model(input_truth)
-            loss = loss_fun(out_pre, output_truth)  # 计算损失
+            loss = loss_fun(out_pre*100, output_truth*100)  # 计算损失
             loss.backward()  # 反向传播
             optimizer.step()  # 更新参数
             train_loss += loss.item() * input_truth.size(0)
@@ -181,23 +165,22 @@ if __name__ == '__main__':
               f"Val Loss: {avg_val_loss:.6f}")
 
         # 保存最佳模型时，同时记录该轮的预测结果
-        torch.save(model.state_dict(), 'best_lstm_model.pth')
         all_preds = epoch_preds
         all_truths = epoch_truths
-        # if avg_val_loss < best_val_loss:
-        #     best_val_loss = avg_val_loss
-        #     torch.save(model.state_dict(), 'best_lstm_model.pth')
-        #     # 保存当前最佳的预测结果和真实值
-        #     all_preds = epoch_preds
-        #     all_truths = epoch_truths
-        #     print(f"  → 验证损失下降，保存最佳模型和预测结果（当前最佳Loss: {best_val_loss:.6f}）")
-        #     early_stop_count = 0
-        # else:
-        #     early_stop_count += 1
-        #     print(f"  → 验证损失未下降，早停计数: {early_stop_count}/{patience}")
-        #     if early_stop_count >= patience:
-        #         print(f"\n早停触发！最佳验证Loss: {best_val_loss:.6f}")
-        #         break
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), 'best_lstm_model.pth')
+            # 保存当前最佳的预测结果和真实值
+            all_preds = epoch_preds
+            all_truths = epoch_truths
+            print(f"  → 验证损失下降，保存最佳模型和预测结果（当前最佳Loss: {best_val_loss:.6f}）")
+            early_stop_count = 0
+        else:
+            early_stop_count += 1
+            print(f"  → 验证损失未下降，早停计数: {early_stop_count}/{patience}")
+            if early_stop_count >= patience:
+                print(f"\n早停触发！最佳验证Loss: {best_val_loss:.6f}")
+                break
 
     # 训练结束后保存预测结果到CSV文件
     results = pd.DataFrame({
@@ -208,7 +191,10 @@ if __name__ == '__main__':
     print("预测结果已保存到 'speed_prediction_results.csv'")
 
     # 绘制预测 vs 真实速度曲线
+    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+    plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
     if True:
+
         plt.figure(figsize=(12, 6))
 
         plt.plot(range(len(all_truths)), all_truths, label='真实速度', alpha=0.7, linewidth=2, color='blue')

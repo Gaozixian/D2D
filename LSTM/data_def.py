@@ -3,22 +3,13 @@ import numpy as np
 import yaml
 import csv
 
-# 提供了一种办法将csv读取的str转换为list
-# def str_to_list(s):
-#     try:
-#         # 用 ast.literal_eval 解析字符串列表
-#         return ast.literal_eval(s)
-#     except (ValueError, SyntaxError):
-#         # 若解析失败，返回空列表或原数据（根据需求调整）
-#         return []
 def load_config(config_path="./config.yaml"):
     with open(config_path, "r", encoding="utf-8") as f:
         # 解析 YAML 为字典
         config = yaml.safe_load(f)
     return config
 
-# 2. 加载配置
-
+# 提供了一种办法将csv读取的str转换为list
 def str_or_float_to_list(s):
     try:
         # 如果是字符串，用 ast.literal_eval 解析
@@ -35,64 +26,6 @@ def str_or_float_to_list(s):
     except (ValueError, SyntaxError):
         return []
 
-def plt_pred_truth(csv_path):
-    # 读取数据
-    with open(csv_path, 'r') as f:
-        reader = csv.reader(f)
-        data = list(reader)
-
-class Normalizer:   # 归一化类
-    def __init__(self):
-        self.speed_mean = 0.0
-        self.speed_std = 1.0
-        self.yaw_mean = 0.0
-        self.yaw_std = 1.0
-        self.accel_mean = 0.0
-        self.accel_std = 1.0
-
-    def fit(self, dataset):
-        """根据训练数据计算均值和标准差"""
-        all_speed_ago = []
-        all_yaw_ago = []
-        all_accel_ago = []
-        all_speed_now = []
-
-        # 收集所有数据
-        for i in range(len(dataset)):
-            speed_ago = dataset.data['speed_ago'][i]
-            yaw_ago = dataset.data['yaw_ago'][i]
-            accel_ago = dataset.data['accel_ago'][i]
-            speed_now = dataset.data['speed_now'][i]
-            
-            all_speed_ago.extend(speed_ago)
-            all_yaw_ago.extend(yaw_ago)
-            all_accel_ago.extend(accel_ago)
-            all_speed_now.extend(speed_now)
-
-        # 计算均值和标准差（避免除零）
-        self.speed_mean = np.mean(all_speed_ago) if all_speed_ago else 0.0
-        self.speed_std = np.std(all_speed_ago) if np.std(all_speed_ago) > 1e-6 else 1.0
-        
-        self.yaw_mean = np.mean(all_yaw_ago) if all_yaw_ago else 0.0
-        self.yaw_std = np.std(all_yaw_ago) if np.std(all_yaw_ago) > 1e-6 else 1.0
-        
-        self.accel_mean = np.mean(all_accel_ago) if all_accel_ago else 0.0
-        self.accel_std = np.std(all_accel_ago) if np.std(all_accel_ago) > 1e-6 else 1.0
-
-    def normalize_input(self, speed_ago, yaw_ago, accel_ago):
-        """归一化输入特征（前序序列）"""
-        speed_norm = (np.array(speed_ago) - self.speed_mean) / self.speed_std
-        yaw_norm = (np.array(yaw_ago) - self.yaw_mean) / self.yaw_std
-        accel_norm = (np.array(accel_ago) - self.accel_mean) / self.accel_std
-        return speed_norm, yaw_norm, accel_norm
-
-    def normalize_label(self, speed_now):
-        """归一化标签（当前速度）"""
-        return (np.array(speed_now) - self.speed_mean) / self.speed_std
-
-    def denormalize(self, speed_norm):
-        """反归一化预测结果（恢复真实尺度）"""
-        return np.array(speed_norm) * self.speed_std + self.speed_mean
 
 class add_data_dimension:
     def __init__(self, seq_len, data):
