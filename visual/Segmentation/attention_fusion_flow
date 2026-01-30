@@ -1,0 +1,42 @@
+// Improved ResNet50 CBAM Fusion
+digraph Attention_Fusion_Flow {
+	dpi=300 rankdir=LR size="12,8"
+	node [fontname="Microsoft YaHei" fontsize=12 shape=box style="rounded,filled"]
+	subgraph cluster_encoder {
+		bgcolor="#f0f8ff" label="编码器阶段 (Encoder Stage)"
+		L1 [label="Layer 1 (x1)
+[H/4, W/4, 256]" fillcolor="#add8e6"]
+		L2 [label="Layer 2 (x2)
+[H/8, W/8, 512]" fillcolor="#add8e6"]
+		L3 [label="Layer 3 (x3)
+[H/16, W/16, 1024]" fillcolor="#add8e6"]
+		L4 [label="Layer 4 (x4)
+[H/32, W/32, 2048]" fillcolor="#add8e6"]
+		L1 -> L2 [label="空间权重 (sa1) 传递" color=green fontcolor=green]
+		L2 -> L3 [label="空间权重 (sa2) 传递" color=green fontcolor=green]
+		L3 -> L4 [label="空间权重 (sa3) 传递" color=green fontcolor=green]
+	}
+	subgraph cluster_af_logic {
+		bgcolor="#fff5ee" label="语义回传处理逻辑 (以 L4 回传 L3 为例)"
+		L4_feat [label="深层语义特征 (L4)" fillcolor="#ffcccb"]
+		Interp [label="双线性插值 (Interpolate)
+[对齐空间尺寸]" fillcolor="#ffd700"]
+		MLP [label="轻量级 MLP (1x1 Conv)
+[对齐通道维度]" fillcolor="#ffa500"]
+		Fusion [label="特征融合 (Sum)
+[x3 + MLP(x4)]" fillcolor="#98fb98" shape=circle]
+		SA_New [label="重新计算
+空间注意力 (SA)" fillcolor="#98fb98"]
+		L4_feat -> Interp
+		Interp -> MLP [label="回传后第一步"]
+		MLP -> Fusion [label="输入给MLP"]
+		Fusion -> SA_New
+	}
+	L4 -> L4_feat [color=red style=dashed]
+	SA_New -> L3 [label="语义优化后的特征" color=red fontcolor=red]
+	L3 -> L2 [label="继续回传优化" color=red fontcolor=red style=dotted]
+	Decoder [label="解码器 (Decoder)
+[特征融合与上采样]" fillcolor="#eeeeee"]
+	L4 -> Decoder
+	L3 -> Decoder
+}
