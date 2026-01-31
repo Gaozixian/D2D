@@ -6,8 +6,8 @@ Carla Autonomous Vehicle Control Application
 功能说明:
 1. 连接到Carla仿真器
 2. 生成指定类型的车辆
-3. 通过按钮控制车辆自动驾驶（基于PID控制器）
-4. 实时显示车辆状态
+3. 使用Carla内置自动驾驶功能
+4. 实时显示车辆状态和相机视角
 5. 安全的资源清理机制
 
 作者: MiniMax Agent
@@ -20,205 +20,294 @@ import threading
 import math
 import tkinter as tk
 from tkinter import messagebox, ttk
+from PIL import Image, ImageTk
+import numpy as np
 
 
 # ============================================================================
-# PID控制器类 - 用于自动驾驶的横向和纵向控制
+# 相机传感器类 - 用于获取车辆视角图像
 # ============================================================================
 
-class PIDController:
+class CameraSensor:
     """
-    PID控制器类，负责计算车辆的控制量（转向、油门/刹车）
+    相机传感器类，负责在车辆上安装相机并捕获图像
 
-    横向控制（Steering）: 基于当前车辆朝向与目标路径点的角度偏差
-    纵向控制（Throttle/Brake）: 基于当前车速与目标车速的速度偏差
+    功能:
+    - 在车辆上安装RGB相机传感器
+    - 回调方式实时获取图像数据
+    - 图像数据转换为PIL图像供tkinter显示
+    - 支持动态调整相对位置
     """
 
-    def __init__(self, vehicle, lateral_params, longitudinal_params, target_speed=30.0):
+    def __init__(self, vehicle, world, width=640, height=480):
         """
-        初始化PID控制器
+        初始化相机传感器
 
         Args:
             vehicle: Carla车辆对象
-            lateral_params: 横向PID参数，字典格式 {'K_P': 1.0, 'K_D': 0.0, 'K_I': 0.0, 'dt': 0.03}
-            longitudinal_params: 纵向PID参数，字典格式
-            target_speed: 目标车速（km/h）
+            world: Carla世界对象
+            width: 图像宽度（默认640）
+            height: 图像高度（默认480）
         """
         self.vehicle = vehicle
-        self.world = vehicle.get_world()
-        self.map = self.world.get_map()
-        self.target_speed = target_speed
+        self.world = world
+        self.width = width
+        self.height = height
+        self.sensor = None
+        self.image = None
+        self.pil_image = None
+        self.lock = threading.Lock()
+        self.running = False
 
-        # PID参数
-        self.lat_params = lateral_params
-        self.lon_params = longitudinal_params
+        # 摄像头相对位置（相对于车辆中心）
+        # x: 前后位置（正前负后）
+        # y: 左右位置（正左负右）
+        # z: 高度位置
+        self.camera_offset = {'x': 0.5, 'y': 0.0, 'z': 1.5}
 
-        # 误差历史缓冲区（用于积分和微分计算）
-        self._lat_error_buffer = []
-        self._lon_error_buffer = []
-
-        # 缓冲区最大长度
-        self._buffer_max_len = 50
-
-    def run_step(self):
+    def set_position(self, x=0.5, y=0.0, z=1.5):
         """
-        执行一步控制计算
+        设置摄像头相对于车辆的位置
 
-        Returns:
-            carla.VehicleControl: 车辆控制命令
-            float: 当前车速（km/h）
+        Args:
+            x: 前后偏移（米），正值为车前，负值为车后
+            y: 左右偏移（米），正值为向左，负值为向右
+            z: 高度偏移（米），正值为向上
         """
-        # 获取车辆当前状态
-        transform = self.vehicle.get_transform()
-        location = transform.location
-        velocity = self.vehicle.get_velocity()
+        self.camera_offset = {'x': x, 'y': y, 'z': z}
+        # 如果传感器已启动，重新启动以应用新位置
+        if self.sensor is not None and self.running:
+            self.stop()
+            self.start()
 
-        # 计算当前车速（m/s转km/h）
-        current_speed = 3.6 * math.sqrt(
-            velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2
-        )
-
-        # 获取目标路径点（前瞻距离根据车速动态调整）
-        current_waypoint = self.map.get_waypoint(location)
-        lookahead_distance = max(5.0, current_speed * 0.5 + 3.0)
+    def start(self):
+        """启动相机传感器"""
+        if self.sensor is not None:
+            return
 
         try:
-            next_waypoints = current_waypoint.next(lookahead_distance)
-            target_waypoint = next_waypoints[0] if next_waypoints else current_waypoint
-        except:
-            target_waypoint = current_waypoint
+            # 获取蓝图库中的RGB相机
+            blueprint = self.world.get_blueprint_library().find('sensor.camera.rgb')
 
-        # 计算横向控制（转向）
-        steer = self._calculate_steering(target_waypoint, transform)
+            # 设置相机属性
+            blueprint.set_attribute('image_size_x', str(self.width))
+            blueprint.set_attribute('image_size_y', str(self.height))
+            blueprint.set_attribute('fov', '110')
 
-        # 计算纵向控制（油门/刹车）
-        throttle_or_brake = self._calculate_throttle_brake(current_speed)
+            # 在车辆上安装相机（相对于车辆中心）
+            sensor_transform = carla.Transform(
+                carla.Location(
+                    x=self.camera_offset['x'],
+                    y=self.camera_offset['y'],
+                    z=self.camera_offset['z']
+                ),
+                carla.Rotation(pitch=-5, yaw=0, roll=0)  # 稍微向下倾斜5度
+            )
 
-        # 构建控制命令
-        control = carla.VehicleControl()
-        control.steer = steer
+            # 创建并启动传感器（attach_to确保跟随车辆）
+            self.sensor = self.world.spawn_actor(blueprint, sensor_transform, attach_to=self.vehicle)
 
-        if throttle_or_brake >= 0:
-            control.throttle = min(throttle_or_brake, 1.0)
-            control.brake = 0.0
-        else:
-            control.throttle = 0.0
-            control.brake = min(abs(throttle_or_brake), 1.0)
+            # 设置图像回调
+            self.sensor.listen(self._on_image)
 
-        return control, current_speed
+            self.running = True
 
-    def _calculate_steering(self, target_waypoint, vehicle_transform):
+        except Exception as e:
+            print(f"Failed to start camera sensor: {e}")
+
+    def _on_image(self, image):
+        """图像回调函数"""
+        if not self.running:
+            return
+
+        try:
+            # 将CARLA图像转换为numpy数组
+            # CARLA图像格式：BGRA
+            array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+            array = np.reshape(array, (image.height, image.width, 4))
+
+            # 转换为RGB格式（去掉alpha通道并交换B和R）
+            array = array[:, :, :3]
+            array = array[:, :, ::-1]  # BGR to RGB
+
+            with self.lock:
+                self.image = array.copy()
+                # 同时转换为PIL图像供tkinter显示
+                self.pil_image = Image.fromarray(array)
+
+        except Exception as e:
+            print(f"Image processing error: {e}")
+
+    def get_image(self):
+        """获取当前numpy图像"""
+        with self.lock:
+            return self.image.copy() if self.image is not None else None
+
+    def get_pil_image(self):
+        """获取当前PIL图像"""
+        with self.lock:
+            return self.pil_image.copy() if self.pil_image is not None else None
+
+    def stop(self):
+        """停止并销毁传感器"""
+        self.running = False
+
+        if self.sensor is not None:
+            try:
+                self.sensor.stop()
+                self.sensor.destroy()
+                self.sensor = None
+            except:
+                pass
+
+        self.image = None
+        self.pil_image = None
+
+    def is_active(self):
+        """检查传感器是否正在运行"""
+        return self.sensor is not None and self.running
+
+
+# ============================================================================
+# Tkinter相机显示窗口类 - 用于显示车辆视角
+# ============================================================================
+
+class TkCameraWindow:
+    """
+    Tkinter相机显示窗口类，负责实时显示车辆相机视角
+
+    功能:
+    - 创建独立的tkinter窗口显示相机图像
+    - 使用Canvas和PIL图像实现稳定显示
+    - 显示车辆速度信息
+    - 窗口关闭时自动清理资源
+    """
+
+    def __init__(self, camera_sensor, vehicle, update_callback=None):
         """
-        计算转向角度
+        初始化相机显示窗口
 
         Args:
-            target_waypoint: 目标路径点
-            vehicle_transform: 车辆变换信息
-
-        Returns:
-            float: 转向值（-1.0到1.0）
+            camera_sensor: CameraSensor对象
+            vehicle: Carla车辆对象
+            update_callback: 速度更新回调函数（可选）
         """
-        # 获取车辆朝向向量
-        vehicle_forward = vehicle_transform.get_forward_vector()
+        self.camera_sensor = camera_sensor
+        self.vehicle = vehicle
+        self.update_callback = update_callback
+        self.window = None
+        self.canvas = None
+        self.photo_image = None
+        self.running = False
+        self.update_id = None
 
-        # 计算指向目标的向量
-        target_location = target_waypoint.transform.location
-        to_target = target_location - vehicle_transform.location
-        to_target.z = 0  # 忽略高度差
-        to_target_length = to_target.length()
+        # 图像尺寸
+        self.image_width = camera_sensor.width
+        self.image_height = camera_sensor.height
 
-        if to_target_length < 0.001:
-            return 0.0
+    def show(self):
+        """显示相机窗口"""
+        if self.window is not None:
+            return
 
-        to_target = to_target / to_target_length  # 归一化
+        # 创建新窗口
+        self.window = tk.Toplevel()
+        self.window.title("Vehicle Camera View")
+        self.window.geometry(f"{self.image_width}x{self.image_height + 60}")
+        self.window.resizable(False, False)
 
-        # 计算角度偏差
-        # 叉积判断左右
-        cross_product = vehicle_forward.x * to_target.y - vehicle_forward.y * to_target.x
+        # 窗口关闭事件
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
 
-        # 点积计算夹角
-        dot_product = (vehicle_forward.x * to_target.x +
-                       vehicle_forward.y * to_target.y)
-        dot_product = max(-1.0, min(1.0, dot_product))
-
-        angle = math.acos(dot_product)
-
-        # 根据叉积符号确定转向方向
-        if cross_product < 0:
-            angle = -angle
-
-        # 更新误差缓冲区
-        self._lat_error_buffer.append(angle)
-        if len(self._lat_error_buffer) > self._buffer_max_len:
-            self._lat_error_buffer.pop(0)
-
-        # PID计算
-        return self._pid_compute(
-            self._lat_error_buffer,
-            self.lat_params['K_P'],
-            self.lat_params['K_I'],
-            self.lat_params['K_D'],
-            self.lat_params['dt']
+        # 创建Canvas用于显示图像
+        self.canvas = tk.Canvas(
+            self.window,
+            width=self.image_width,
+            height=self.image_height,
+            bg='black'
         )
+        self.canvas.pack(padx=10, pady=5)
 
-    def _calculate_throttle_brake(self, current_speed):
-        """
-        计算油门或刹车控制量
-
-        Args:
-            current_speed: 当前车速（km/h）
-
-        Returns:
-            float: 正值为油门（0-1），负值为刹车（0-1）
-        """
-        # 速度误差
-        error = self.target_speed - current_speed
-
-        # 更新误差缓冲区
-        self._lon_error_buffer.append(error)
-        if len(self._lon_error_buffer) > self._buffer_max_len:
-            self._lon_error_buffer.pop(0)
-
-        # PID计算
-        return self._pid_compute(
-            self._lon_error_buffer,
-            self.lon_params['K_P'],
-            self.lon_params['K_I'],
-            self.lon_params['K_D'],
-            self.lon_params['dt']
+        # 创建状态标签
+        self.status_label = tk.Label(
+            self.window,
+            text="Waiting for camera...",
+            font=('Arial', 12),
+            fg='gray'
         )
+        self.status_label.pack(pady=5)
 
-    def _pid_compute(self, error_buffer, kp, ki, kd, dt):
-        """
-        PID计算核心函数
+        self.running = True
 
-        Args:
-            error_buffer: 误差历史缓冲区
-            kp: 比例增益
-            ki: 积分增益
-            kd: 微分增益
-            dt: 时间步长
+        # 启动更新循环
+        self._update_display()
 
-        Returns:
-            float: PID输出值
-        """
-        if len(error_buffer) < 2:
-            return kp * error_buffer[-1] if error_buffer else 0.0
+    def _update_display(self):
+        """更新显示循环"""
+        if not self.running or self.window is None:
+            return
 
-        # 比例项
-        p_term = kp * error_buffer[-1]
+        try:
+            # 获取PIL图像
+            pil_image = self.camera_sensor.get_pil_image()
 
-        # 积分项
-        i_term = ki * sum(error_buffer) * dt
+            if pil_image is not None:
+                # 转换为PhotoImage
+                self.photo_image = ImageTk.PhotoImage(pil_image)
 
-        # 微分项
-        d_term = kd * (error_buffer[-1] - error_buffer[-2]) / dt
+                # 在Canvas上显示图像
+                self.canvas.create_image(
+                    0, 0,
+                    anchor=tk.NW,
+                    image=self.photo_image
+                )
 
-        return p_term + i_term + d_term
+                # 获取并显示速度
+                velocity = self.vehicle.get_velocity()
+                speed = 3.6 * math.sqrt(
+                    velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2
+                )
+                self.status_label.config(
+                    text=f"Speed: {speed:.1f} km/h | Camera Active",
+                    fg='green'
+                )
 
-    def set_target_speed(self, speed):
-        """设置目标车速（km/h）"""
-        self.target_speed = speed
+                # 如果有回调函数，调用它
+                if self.update_callback:
+                    self.update_callback(speed)
+
+            else:
+                self.status_label.config(
+                    text="Waiting for camera...",
+                    fg='gray'
+                )
+
+        except Exception as e:
+            print(f"Display update error: {e}")
+
+        # 继续更新（30fps）
+        self.update_id = self.window.after(33, self._update_display)
+
+    def close(self):
+        """关闭窗口"""
+        self.running = False
+
+        if self.update_id is not None:
+            self.window.after_cancel(self.update_id)
+            self.update_id = None
+
+        if self.window is not None:
+            try:
+                self.window.destroy()
+            except:
+                pass
+            self.window = None
+            self.canvas = None
+            self.photo_image = None
+
+    def is_running(self):
+        """检查窗口是否正在运行"""
+        return self.running and self.window is not None
 
 
 # ============================================================================
@@ -245,7 +334,7 @@ class CarlaAutoPilotApp:
         """
         self.root = root
         self.root.title("Carla Autonomous Vehicle Controller")
-        self.root.geometry("450x400")
+        self.root.geometry("500x580")  # 增加高度以显示摄像头位置控件
         self.root.resizable(False, False)
 
         # Carla相关变量
@@ -253,7 +342,11 @@ class CarlaAutoPilotApp:
         self.world = None
         self.map = None
         self.vehicle = None
-        self.controller = None
+
+        # 相机相关变量
+        self.camera_sensor = None
+        self.pygame_display = None
+        self.pygame_thread = None
 
         # 控制状态
         self.autopilot_enabled = False
@@ -316,6 +409,7 @@ class CarlaAutoPilotApp:
 
         # 目标速度设置
         ttk.Label(frame_control, text="Target Speed (km/h):").pack(side="left", padx=5)
+        ttk.Label(frame_control, text="Target Task:").pack(side="left", padx=5)
 
         self.spin_speed = ttk.Spinbox(
             frame_control,
@@ -335,6 +429,74 @@ class CarlaAutoPilotApp:
             state="disabled"
         )
         self.btn_autopilot.pack(fill="x", pady=10)
+
+        # 3.5 相机视角控制区域
+        frame_camera = ttk.LabelFrame(self.root, text="Camera View", padding=10)
+        frame_camera.pack(fill="x", padx=10, pady=5)
+
+        self.btn_camera = ttk.Button(
+            frame_camera,
+            text="OPEN CAMERA VIEW",
+            command=self._toggle_camera_view,
+            state="disabled"
+        )
+        self.btn_camera.pack(fill="x", pady=5)
+
+        self.lbl_camera_status = ttk.Label(
+            frame_camera,
+            text="Status: Camera Closed",
+            foreground="gray"
+        )
+        self.lbl_camera_status.pack()
+
+        # 摄像头位置调整区域
+        frame_camera_pos = ttk.LabelFrame(frame_camera, text="Camera Position", padding=5)
+        frame_camera_pos.pack(fill="x", pady=5)
+
+        # X位置（前后）
+        ttk.Label(frame_camera_pos, text="X (Front/Back):").grid(row=0, column=0, padx=2, sticky="e")
+        self.spin_cam_x = ttk.Spinbox(
+            frame_camera_pos,
+            from_=-2.0,
+            to=5.0,
+            increment=0.1,
+            width=6
+        )
+        self.spin_cam_x.set(0.5)
+        self.spin_cam_x.grid(row=0, column=1, padx=2)
+
+        # Y位置（左右）
+        ttk.Label(frame_camera_pos, text="Y (Left/Right):").grid(row=0, column=2, padx=2, sticky="e")
+        self.spin_cam_y = ttk.Spinbox(
+            frame_camera_pos,
+            from_=-2.0,
+            to=2.0,
+            increment=0.1,
+            width=6
+        )
+        self.spin_cam_y.set(0.0)
+        self.spin_cam_y.grid(row=0, column=3, padx=2)
+
+        # Z位置（高度）
+        ttk.Label(frame_camera_pos, text="Z (Height):").grid(row=1, column=0, padx=2, sticky="e")
+        self.spin_cam_z = ttk.Spinbox(
+            frame_camera_pos,
+            from_=0.5,
+            to=5.0,
+            increment=0.1,
+            width=6
+        )
+        self.spin_cam_z.set(1.5)
+        self.spin_cam_z.grid(row=1, column=1, padx=2)
+
+        # 应用位置按钮
+        self.btn_cam_apply = ttk.Button(
+            frame_camera,
+            text="APPLY POSITION",
+            command=self._apply_camera_position,
+            state="disabled"
+        )
+        self.btn_cam_apply.pack(fill="x", pady=5)
 
         # 4. 状态显示区域
         frame_status = ttk.LabelFrame(self.root, text="Status", padding=10)
@@ -431,44 +593,20 @@ class CarlaAutoPilotApp:
             # 生成车辆
             self.vehicle = self.world.spawn_actor(blueprint, spawn_point)
 
-            # 配置PID控制器
-            # 横向控制参数（转向）
-            lateral_params = {
-                'K_P': 1.5,  # 比例增益
-                'K_D': 0.3,  # 微分增益
-                'K_I': 0.05,  # 积分增益
-                'dt': 0.05  # 时间步长
-            }
-
-            # 纵向控制参数（油门/刹车）
-            longitudinal_params = {
-                'K_P': 0.5,
-                'K_D': 0.1,
-                'K_I': 0.02,
-                'dt': 0.05
-            }
-
-            # 获取目标速度
-            target_speed = float(self.spin_speed.get())
-
-            # 创建控制器
-            self.controller = PIDController(
-                self.vehicle,
-                lateral_params,
-                longitudinal_params,
-                target_speed
-            )
-
             # 移动观察者视角到车辆位置
             self._move_spectator_to_vehicle()
 
+            # 初始化相机传感器
+            self.camera_sensor = CameraSensor(self.vehicle, self.world)
+
             # 更新界面状态
             self.btn_autopilot.config(state="normal")
+            self.btn_camera.config(state="normal")
+            self.btn_cam_apply.config(state="normal")
             messagebox.showinfo(
                 "Success",
                 f"Vehicle spawned successfully!\n"
-                f"Blueprint: {blueprint.id}\n"
-                f"Target Speed: {target_speed} km/h"
+                f"Blueprint: {blueprint.id}"
             )
 
         except Exception as e:
@@ -491,8 +629,100 @@ class CarlaAutoPilotApp:
         except Exception as e:
             print(f"Warning: Failed to move spectator: {e}")
 
+    def _toggle_camera_view(self):
+        """切换相机视角显示"""
+        if self.pygame_display is not None and self.pygame_display.is_running():
+            # 关闭相机视图
+            self._cleanup_camera_view()
+
+        else:
+            # 检查是否有车辆
+            if self.vehicle is None:
+                messagebox.showwarning("Warning", "No vehicle available!")
+                return
+
+            # 启动相机传感器
+            if self.camera_sensor is not None:
+                self.camera_sensor.start()
+
+                # 创建tkinter相机窗口
+                self.pygame_display = TkCameraWindow(
+                    self.camera_sensor,
+                    self.vehicle,
+                    update_callback=self._on_speed_update
+                )
+
+                # 显示窗口
+                self.pygame_display.show()
+
+                # 更新界面状态
+                self.btn_camera.config(text="CLOSE CAMERA VIEW")
+                self.lbl_camera_status.config(text="Status: Camera Active", foreground="green")
+
+    def _on_speed_update(self, speed):
+        """速度更新回调（可选用于更新主界面）"""
+        pass  # 主界面已经在_control_loop中更新
+
+    def _apply_camera_position(self):
+        """应用摄像头位置设置"""
+        try:
+            # 获取位置值
+            x = float(self.spin_cam_x.get())
+            y = float(self.spin_cam_y.get())
+            z = float(self.spin_cam_z.get())
+
+            # 如果相机已启动，先停止
+            camera_was_active = (
+                    self.camera_sensor is not None and
+                    self.camera_sensor.is_active()
+            )
+
+            if camera_was_active:
+                self._cleanup_camera_view()
+
+            # 设置新位置
+            if self.camera_sensor is not None:
+                self.camera_sensor.set_position(x, y, z)
+
+            # 重新启动相机（如果之前是开启状态）
+            if camera_was_active:
+                self.camera_sensor.start()
+                self.pygame_display = TkCameraWindow(
+                    self.camera_sensor,
+                    self.vehicle,
+                    update_callback=self._on_speed_update
+                )
+                self.pygame_display.show()
+                self.btn_camera.config(text="CLOSE CAMERA VIEW")
+                self.lbl_camera_status.config(text="Status: Camera Active", foreground="green")
+
+            messagebox.showinfo(
+                "Success",
+                f"Camera position applied:\n"
+                f"X: {x}m (Front/Back)\n"
+                f"Y: {y}m (Left/Right)\n"
+                f"Z: {z}m (Height)"
+            )
+
+        except ValueError:
+            messagebox.showerror("Error", "Invalid position values!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to apply position:\n{str(e)}")
+
+    def _cleanup_camera_view(self):
+        """清理相机视图资源"""
+        if self.pygame_display is not None:
+            self.pygame_display.close()
+            self.pygame_display = None
+
+        if self.camera_sensor is not None:
+            self.camera_sensor.stop()
+
+        self.btn_camera.config(text="OPEN CAMERA VIEW")
+        self.lbl_camera_status.config(text="Status: Camera Closed", foreground="gray")
+
     def _toggle_autopilot(self):
-        """切换自动驾驶模式"""
+        """切换自动驾驶模式 - 使用Carla内置自动驾驶"""
         if not self.vehicle:
             messagebox.showwarning("Warning", "No vehicle available!")
             return
@@ -500,16 +730,26 @@ class CarlaAutoPilotApp:
         self.autopilot_enabled = not self.autopilot_enabled
 
         if self.autopilot_enabled:
-            # 更新目标速度
+            # 获取目标速度（作为最大速度限制）
             target_speed = float(self.spin_speed.get())
-            self.controller.set_target_speed(target_speed)
+
+            # 设置车辆最大速度（m/s，Carla内部使用m/s）
+            # 将km/h转换为m/s
+            max_speed_mps = target_speed / 3.6
+            self.vehicle.set_max_speed(max_speed_mps)
+
+            # 启用Carla内置自动驾驶
+            self.vehicle.set_autopilot(True)
 
             # 更新按钮状态
             self.btn_autopilot.config(text="STOP AUTOPILOT")
-            self.lbl_mode.config(text="Mode: Autopilot", foreground="green")
+            self.lbl_mode.config(text=f"Mode: Autopilot (Max {target_speed} km/h)", foreground="green")
 
         else:
-            # 停止自动驾驶，施加刹车
+            # 禁用自动驾驶
+            self.vehicle.set_autopilot(False)
+
+            # 施加刹车使车辆停止
             self.vehicle.apply_control(
                 carla.VehicleControl(throttle=0.0, brake=1.0)
             )
@@ -520,38 +760,21 @@ class CarlaAutoPilotApp:
 
     def _control_loop(self):
         """
-        自动驾驶控制循环（后台线程运行）
+        状态更新循环（后台线程运行）
 
-        以20Hz的频率运行PID控制器
+        用于更新UI显示的车辆速度信息
+        Carla内置自动驾驶会自动处理车辆控制
         """
         while self.running:
             try:
-                if (self.vehicle and
-                        self.vehicle.is_alive and
-                        self.autopilot_enabled and
-                        self.controller):
-
-                    # 执行PID控制
-                    control, current_speed = self.controller.run_step()
-
-                    # 应用控制
-                    self.vehicle.apply_control(control)
-
-                    # 更新UI显示
-                    self.root.after(
-                        0,
-                        lambda s=current_speed: self.lbl_speed.config(
-                            text=f"Speed: {s:.1f} km/h"
-                        )
-                    )
-
-                elif self.vehicle and self.vehicle.is_alive:
-                    # 仅显示速度（手动模式）
+                if self.vehicle and self.vehicle.is_alive:
+                    # 获取车辆速度
                     velocity = self.vehicle.get_velocity()
                     speed = 3.6 * math.sqrt(
                         velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2
                     )
 
+                    # 更新UI显示
                     self.root.after(
                         0,
                         lambda s=speed: self.lbl_speed.config(
@@ -562,12 +785,21 @@ class CarlaAutoPilotApp:
             except Exception as e:
                 print(f"Control loop error: {e}")
 
-            # 控制频率：20Hz
+            # 更新频率：20Hz
             time.sleep(0.05)
 
     def _on_close(self):
         """窗口关闭处理"""
         self.running = False
+
+        # 先清理相机资源
+        if self.pygame_display is not None:
+            self.pygame_display.stop()
+            self.pygame_display = None
+
+        if self.camera_sensor is not None:
+            self.camera_sensor.stop()
+            self.camera_sensor = None
 
         # 销毁车辆
         if self.vehicle:
