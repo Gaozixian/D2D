@@ -1,4 +1,4 @@
-##  carla_collect代码文件说明
+````##  carla_collect代码文件说明
 carla_collect/carla_data_collect：负责四个视角和控制信息的收集
 
 carla_collect/my_manual_control.py：负责读取生成的车辆，接着在车辆周围放置四个摄像头
@@ -9,6 +9,7 @@ carla_collect/manual_control.py：carla自带的控制车辆，这里修改了�
 
 carla_collect/generate_vehicles.py：生成随机车辆
 
+main：用于模型训练
 ## carla_location代码文件说明
 ipynb： 负责绘制两个路径的对比图片以及转向判定对比图
 
@@ -29,11 +30,11 @@ cd ~/carla/Unreal/CarlaUE4
 
 另开终端
 cd ~/carla/PythonAPI/util
-python3 config.py --map Town05	# 切换地图
+python3 config.py --map Town07	# 切换地图
 注意：如果该地图是第一次加载，则会进行编译，编译过程中可能会发生崩溃，多试几次就行
 3. 生成自车
-cd ~/carla/PythonAPI/examples
-python3 manual_control.py	# 生成自车
+cd ~/gzx/D2D/carla_collect
+python3 manual_control.py --filter vehicle.tesla.cybertruck # 生成自车，已经限定好了速度
 
 4. 开始数据采集
 cd ~/gaozixian/D2D/carla_collect
@@ -46,3 +47,4 @@ python3 my_manual_control.py
 
 ```python
 ```
+````
