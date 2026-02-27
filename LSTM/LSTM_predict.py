@@ -1,5 +1,4 @@
 import torch
-from pyparsing import originalTextFor
 from torch import optim
 from torch.utils.data import DataLoader, Dataset, random_split
 import torch.nn as nn
@@ -8,6 +7,9 @@ import yaml
 import csv
 import matplotlib.pyplot as plt
 from data_def import *
+
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
 # batch_first = true:代表输入输出的tensor是[batch_size, seq_len, input_seze]
 
@@ -191,10 +193,7 @@ if __name__ == '__main__':
     print("预测结果已保存到 'speed_prediction_results.csv'")
 
     # 绘制预测 vs 真实速度曲线
-    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-    plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
     if True:
-
         plt.figure(figsize=(12, 6))
 
         plt.plot(range(len(all_truths)), all_truths, label='真实速度', alpha=0.7, linewidth=2, color='blue')

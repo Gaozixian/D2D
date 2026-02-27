@@ -7,18 +7,27 @@ val_ratio: 0.2
 load_pretrained: true  # 布尔值
 
 
-input_size: 3
+input_size: 7
 hidden_size: 50
 num_layers: 2
 output_size: 1
 drop_out: 0.3
 seq_length: 10
 
-original_data_path: "./driving_log_normalized.csv"
+#vx: "velocity_x"
+#vy: "velocity_y"
+#vz: "velocity_z"
+#steer: "steer"
+#global_x: "global_x"
+#global_y: "global_y"
+#global_z: "global_z"
+
+original_data_path: "./vehicle_data.csv"
 data_path: "./sample_data.csv"
 model_path: "./best_lstm_model.pth"
 result_path: "./speed_prediction_results.csv"
 
 # 支持列表/嵌套（适合多特征配置）
 input_features: ['speed_kmh', 'throttle', 'brake']  # 列表
-target_feature: 'speed_kmh'
+input_features_new: ['global_x', 'global_y', 'global_z', 'velocity_x', 'velocity_y', 'velocity_z', 'steer']  # 列表
+target_feature: 'steer'

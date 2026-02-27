@@ -9,6 +9,8 @@ carla_collect/manual_control.py：carla自带的控制车辆，这里修改了�
 
 carla_collect/generate_vehicles.py：生成随机车辆
 
+main: 模型训练文件
+
 main：用于模型训练
 ## carla_location代码文件说明
 ipynb： 负责绘制两个路径的对比图片以及转向判定对比图
