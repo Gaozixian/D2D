@@ -15,7 +15,7 @@ def find_existing_tesla(world):
     # 遍历所有已生成的Actor
     for actor in world.get_actors():
         # 判断是否是车辆，且蓝图名称为特斯拉Model3
-        if actor.type_id == "vehicle.tesla.model3" and actor.attributes.get("role_name", "") != "autopilot":
+        if actor.type_id == "vehicle.tesla.cybertruck" and actor.attributes.get("role_name", "") != "autopilot":
             print(f"找到已生成的特斯拉车辆：ID={actor.id}")
             return actor
     return None
