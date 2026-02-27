@@ -334,7 +334,7 @@ class CarlaAutoPilotApp:
         """
         self.root = root
         self.root.title("Carla Autonomous Vehicle Controller")
-        self.root.geometry("500x580")  # 增加高度以显示摄像头位置控件
+        self.root.geometry("680x680")  # 增加高度以显示摄像头位置控件
         self.root.resizable(False, False)
 
         # Carla相关变量
@@ -405,11 +405,11 @@ class CarlaAutoPilotApp:
 
         # 3. 自动驾驶控制区域
         frame_control = ttk.LabelFrame(self.root, text="Autopilot Control", padding=10)
-        frame_control.pack(fill="x", padx=10, pady=5)
+        frame_control.pack(fill="x", padx=15, pady=5)
 
         # 目标速度设置
         ttk.Label(frame_control, text="Target Speed (km/h):").pack(side="left", padx=5)
-        ttk.Label(frame_control, text="Target Task:").pack(side="left", padx=5)
+        # ttk.Label(frame_control, text="Target Task:").pack(side="left", padx=10)
 
         self.spin_speed = ttk.Spinbox(
             frame_control,

@@ -238,8 +238,8 @@ class World(object):
         ]
 
     def restart(self):
-        self.player_max_speed = 1.589
-        self.player_max_speed_fast = 3.713
+        self.player_max_speed = 6.43
+        self.player_max_speed_fast = 6.43
         # Keep same camera config if the camera manager exists.
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
@@ -260,9 +260,9 @@ class World(object):
         if blueprint.has_attribute('is_invincible'):
             blueprint.set_attribute('is_invincible', 'true')
         # set the max speed
-        # if blueprint.has_attribute('speed'):
-        #     self.player_max_speed = float(blueprint.get_attribute('speed').recommended_values[1])
-        #     self.player_max_speed_fast = float(blueprint.get_attribute('speed').recommended_values[2])
+        if blueprint.has_attribute('speed'):
+            self.player_max_speed = float(blueprint.get_attribute('speed').recommended_values[1])
+            self.player_max_speed_fast = float(blueprint.get_attribute('speed').recommended_values[2])
 
         # Spawn the player.
         if self.player is not None:
