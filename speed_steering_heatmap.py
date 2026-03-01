@@ -22,7 +22,7 @@ matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicod
 matplotlib.rcParams['axes.unicode_minus'] = False
 
 
-def generate_autonomous_driving_data(num_samples=10000, seed=41):
+def generate_autonomous_driving_data(num_samples=19000, seed=41):
     """
     生成符合自动驾驶数据集分布的合成数据
 
