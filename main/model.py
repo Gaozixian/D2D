@@ -92,11 +92,15 @@ class DualStreamDrivingModel(nn.Module):
         )
 
         # ==================== 4. 预测控制头 ====================
+        # self.control_head = nn.Sequential(
+        #     nn.Linear(lstm_hidden_size, 128),
+        #     nn.ReLU(),
+        #     nn.Linear(128, 4)  # [accel_x, accel_y, accel_z, steer]
+        # )
         self.control_head = nn.Sequential(
             nn.Linear(lstm_hidden_size, 128),
-            nn.ReLU(),
-            nn.Linear(128, 4)  # [accel_x, accel_y, accel_z, steer]
-        )
+            nn.ReLU(), nn.Linear(128, 2)  # [velocity, steer]
+            )
 
     def extract_image_features(self, img_t_minus_2, img_t_minus_1, img_t):
         f1 = self.resnet.get_feature_maps(img_t_minus_2)
