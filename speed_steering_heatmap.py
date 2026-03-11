@@ -1,314 +1,192 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-自动驾驶数据速度与转角热力图可视化
-=====================================
-功能：
-    1. 生成符合自动驾驶场景分布的合成数据
-    2. 绘制速度和转角的二维热力图
-    3. 数据密集区域颜色越深
-
-作者：MiniMax Agent
-"""
-
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 import matplotlib
-import os
+from matplotlib.colors import LogNorm
 
 # 设置中文字体支持
 matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS', 'Noto Sans CJK SC']
 matplotlib.rcParams['axes.unicode_minus'] = False
 
 
-def generate_autonomous_driving_data(num_samples=19000, seed=41):
+def generate_merged_driving_data(scenarios, seed=42):
     """
-    生成符合自动驾驶数据集分布的合成数据
-
-    数据生成逻辑：
-    1. 速度使用Beta分布，偏向低速（城市驾驶场景）
-    2. 转角使用正态分布，中心为0（直线行驶为主）
-    3. 速度与转角呈负相关：高速时转角小，低速时转角大（物理约束）
-
-    参数:
-        num_samples: 数据点数量
-        seed: 随机种子，确保可复现
-
-    返回:
-        speed: 归一化速度数组 (0-1)
-        steering: 归一化转角数组 (-1 到 1)
+    功能增强：正速度平滑过渡，负速度严格按设定生成（不平滑）
     """
     np.random.seed(seed)
 
-    # 步骤1：生成速度数据
-    # 使用Beta分布，参数alpha>beta使数据偏向低速
-    # alpha=2, beta=5 产生一个左偏的分布，大部分在0-0.4区间
-    speed = np.random.beta(2.5, 4, num_samples)
+    # 分类存储数据
+    pos_anchors_speed = []
+    pos_anchors_std = []
+    pos_anchors_mean = []
 
-    # 步骤2：生成转角数据（考虑速度的影响）
-    # 高速时转角应该较小，低速时转角可以较大
-    # 使用与速度相关的标准差来实现这个物理约束
-    steering = np.zeros(num_samples)
+    final_speeds = []
+    final_steers = []
 
-    for i in range(num_samples):
-        # 速度越低，转角范围越大；速度越高，转角范围越小
-        # 基础标准差为0.3，随着速度增加而减小
-        scale = 0.3 * (1 - speed[i] * 0.8)  # 确保高速时转角接近0
-        steering[i] = np.random.normal(0.1, scale)
+    print(f"{'场景':<10} | {'速度区间':<10} | {'状态':<8} | {'标准差'}")
+    print("-" * 60)
 
-    # 步骤3：添加一些典型的驾驶场景
-    # 3.1 高速巡航场景（速度>0.7，转角接近0）- 增加这部分数据
-    num_highway = int(num_samples * 0.15)
-    highway_speeds = np.random.beta(6, 1.5, num_highway)  # 更集中在高速区间(0.7-1.0)
-    highway_steering = np.random.normal(0, 0.03, num_highway)  # 极小的转角，更集中在0附近
+    for sc in scenarios:
+        s_min, s_max = sc['speed_range']
+        count = sc['count']
+        dist_type = sc.get('speed_dist', 'uniform')
 
-    # 3.2 城市中低速转向场景（速度0.2-0.5，转角较大）- 新增
-    num_turning = int(num_samples * 0.5)  # 增加15%的中低速转向数据
-    turning_speeds = np.random.beta(4, 4, num_turning)  # 集中在0.3-0.6区间
-    # 生成明显的左转或右转（不包含0附近的小转角）
-    turning_directions = np.random.choice([-1, 1], num_turning)  # 随机左/右转
-    turning_steering = turning_directions * (0.3 + np.random.beta(2, 1.5, num_turning) * 0.5)
+        # 1. 生成该区间内的速度
+        if dist_type == 'uniform':
+            v = np.random.uniform(s_min, s_max, count)
+        elif dist_type == 'normal':
+            mu = (s_min + s_max) / 2
+            sigma = (s_max - s_min) / 6
+            v = np.random.normal(mu, sigma, count)
+            v = np.clip(v, s_min, s_max)
+        else:
+            v = np.random.uniform(s_min, s_max, count)
 
-    # 3.3 城市低速转弯场景（速度<0.3，转角较大）
-    num_urban = int(num_samples * 0.25)
-    urban_speeds = np.random.beta(3, 3, num_urban)  # 偏向低速
-    urban_steering = np.random.normal(0.01, 0.25, num_urban)  # 较大的转角
+        # 2. 逻辑分支处理
+        if s_max <= 0:
+            # --- 负速度逻辑：严格匹配设定，不参与插值 ---
+            # 直接使用配置中的 mean 和 std 生成
+            s = np.random.normal(sc.get('steer_mean', 0.0), sc['steer_std'], count)
+            final_speeds.append(v)
+            final_steers.append(s)
+            print(f"{sc['name']:<10} | {s_min:>4.1f}-{s_max:<4.1f} | 严格固定 | {sc['steer_std']:.3f}")
+        else:
+            # --- 正速度逻辑：收集锚点准备插值 ---
+            center_speed = (s_min + s_max) / 2
+            pos_anchors_speed.append(center_speed)
+            pos_anchors_std.append(sc['steer_std'])
+            pos_anchors_mean.append(sc.get('steer_mean', 0.0))
 
-    # 3.4 停车场/掉头场景（速度很低，转角很大）
-    num_parking = int(num_samples * 0.03)
-    parking_speeds = np.random.beta(1, 6, num_parking)  # 非常低的速度
-    parking_steering = np.random.normal(0, 0.4, num_parking)  # 大转角
+            # 先暂存速度，稍后统一插值计算转角
+            # 我们用一个临时标记来记录这部分数据需要平滑处理
+            final_speeds.append(v)
+            final_steers.append(None)  # 占位符
+            print(f"{sc['name']:<10} | {s_min:>4.1f}-{s_max:<4.1f} | 平滑过渡 | {sc['steer_std']:.3f}")
 
-    # 合并所有数据
-    speed = np.concatenate([speed, highway_speeds, turning_speeds, urban_speeds, parking_speeds])
-    steering = np.concatenate([steering, highway_steering, turning_steering, urban_steering, parking_steering])
+    # 3. 处理正速度区域的平滑插值
+    # 提取所有需要平滑的速度点
+    all_v = np.concatenate(final_speeds)
 
-    # 步骤4：裁剪到合理范围
-    speed = np.clip(speed, 0, 1)
-    steering = np.clip(steering, -1, 1)
+    # 准备正速度锚点排序
+    sort_idx = np.argsort(pos_anchors_speed)
+    as_arr = np.array(pos_anchors_speed)[sort_idx]
+    astd_arr = np.array(pos_anchors_std)[sort_idx]
+    am_arr = np.array(pos_anchors_mean)[sort_idx]
 
-    # 打乱数据顺序
-    indices = np.random.permutation(len(speed))
-    speed = speed[indices]
-    steering = steering[indices]
+    # 重新构建最终结果
+    actual_final_steers = []
+    idx_offset = 0
+    for i, sc in enumerate(scenarios):
+        v_part = final_speeds[i]
+        if final_steers[i] is not None:
+            # 负速度部分：直接添加已生成的
+            actual_final_steers.append(final_steers[i])
+        else:
+            # 正速度部分：计算插值
+            current_stds = np.interp(v_part, as_arr, astd_arr)
+            current_means = np.interp(v_part, as_arr, am_arr)
+            s_part = np.random.normal(current_means, current_stds)
 
-    return speed, steering
+            # 仅对正速度区域保留原有的局部扰动（可选）
+            urban_mask = (v_part > 0) & (v_part < 0.3)
+            if np.any(urban_mask):
+                s_part[urban_mask] += np.random.uniform(-0.1, 0.1, np.sum(urban_mask))
+
+            actual_final_steers.append(s_part)
+
+    speed_array = np.concatenate(final_speeds)
+    steer_array = np.concatenate(actual_final_steers)
+
+    return np.clip(speed_array, -1, 1), np.clip(steer_array, -1, 1)
 
 
-def create_heatmap(speed, steering, output_path='speed_steering_heatmap.png'):
+def plot_merged_visualization(speed, steering, output_path='speed_steering_heatmap.png'):
     """
-    创建速度与转角的热力图
-
-    参数:
-        speed: 归一化速度数组
-        steering: 归一化转角数组
-        output_path: 输出图片路径
+    只绘制并保存左侧的 Hexbin 热力图
     """
-    # 创建图形
-    fig, ax = plt.subplots(figsize=(12, 9))
+    fig, ax = plt.subplots(figsize=(10, 8))
+    # 设定一个显示倍数
+    display_multiplier = 15.0
+    # 为每个点分配一个权重
+    weights = np.ones_like(speed) * display_multiplier
 
-    # 使用hexbin绘制六边形热力图（适合密集数据）
-    # gridsize控制六边形大小
-    hb = ax.hexbin(
-        speed,
-        steering,
-        gridsize=50,  # 六边形网格大小
-        cmap='inferno',  # 热力图配色：低密度浅色，高密度深色
-        mincnt=1,  # 至少1个点才显示
-        extent=[0, 1, -1, 1]  # 坐标范围
-    )
+    # 使用 hexbin 绘制，extent 范围扩大到包含负数速度
+    hb = ax.hexbin(speed, steering,
+                   C=weights,
+                   reduce_C_function=np.sum,  # 将权重求和作为显示数值
+                   gridsize=70,
+                   cmap='magma',
+                   bins='log',
+                   mincnt=1,
+                   extent=[-0.15, 1, -1, 1])
 
-    # 添加颜色条
-    cb = fig.colorbar(hb, ax=ax, label='样本密度 (数据点数量)')
+    fig.colorbar(hb, ax=ax, label='样本密度')
 
-    # 设置坐标轴标签
-    ax.set_xlabel('归一化速度 (v)', fontsize=14, fontweight='bold')
-    ax.set_ylabel('归一化转角 (δ)', fontsize=14, fontweight='bold')
+    ax.set_title('样本分布热力图', fontsize=15)
+    ax.set_xlabel('速度 (v)', fontsize=15)
+    ax.set_ylabel('转角 (δ)', fontsize=15)
 
-    # 设置标题
-    ax.set_title('样本分布热力图\n',
-                 fontsize=16, fontweight='bold', pad=20)
-
-    # 添加零线参考
-    ax.axhline(y=0, color='white', linestyle='--', linewidth=0.8, alpha=0.7)
-
-    # 设置坐标轴范围和刻度
-    ax.set_xlim(0, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_xticks(np.arange(0, 1.1, 0.1))
-    ax.set_yticks(np.arange(-1, 1.1, 0.2))
-
-    # 添加网格
-    ax.grid(True, alpha=0.3, color='white', linestyle='--')
-
-    # 添加注释说明
-    # textstr = 'Data Distribution Characteristics:\n'
-    # textstr += '• Low speed + High steering: Parking/U-turn\n'
-    # textstr += '• Medium speed + Low steering: City driving\n'
-    # textstr += '• High speed + Near-zero steering: Highway'
-
-    props = dict(boxstyle='round', facecolor='black', alpha=0.7)
-    # ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
-    #         verticalalignment='top', color='white', bbox=props)
-
-    # 调整布局
-    plt.tight_layout()
-
-    # 保存图片
-    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
-    print(f"Heatmap saved to: {output_path}")
-
-    plt.close()
-
-    return output_path
-
-
-def create_histogram_2d(speed, steering, output_path='speed_steering_hist2d.png'):
-    """
-    创建二维直方图热力图（另一种可视化方式）
-
-    参数:
-        speed: 归一化速度数组
-        steering: 归一化转角数组
-        output_path: 输出图片路径
-    """
-    fig, ax = plt.subplots(figsize=(12, 9))
-
-    # 使用hist2d绘制二维直方图
-    hb = ax.hist2d(
-        speed,
-        steering,
-        bins=80,  # 分箱数量
-        cmap='hot',  # 热力图配色
-        range=[[0, 1], [-1, 1]]  # 坐标范围
-    )
-
-    # 添加颜色条
-    cb = fig.colorbar(hb[3], ax=ax, label='Sample Density')
-
-    # 设置坐标轴
-    ax.set_xlabel('Normalized Speed (v)', fontsize=14, fontweight='bold')
-    ax.set_ylabel('Normalized Steering Angle (δ)', fontsize=14, fontweight='bold')
-    ax.set_title('Autonomous Driving: Speed vs Steering Angle\n(2D Histogram Heatmap)',
-                 fontsize=16, fontweight='bold')
-
-    # 添加参考线
-    ax.axhline(y=0, color='cyan', linestyle='--', linewidth=1, alpha=0.7)
-
-    # 设置刻度
-    ax.set_xlim(0, 1)
-    ax.set_ylim(-1, 1)
+    # 辅助线
+    ax.axhline(0, color='white', linestyle=':', alpha=0.3)
+    ax.axvline(0, color='cyan', linestyle='--', alpha=0.4, label='零速线')
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
-    print(f"Histogram 2D saved to: {output_path}")
-
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"热力图已成功保存至: {output_path}")
+    plt.show()
     plt.close()
-
-    return output_path
-
-
-def analyze_data_distribution(speed, steering):
-    """
-    分析数据分布特征
-    """
-    print("\n" + "=" * 60)
-    print("Data Distribution Analysis")
-    print("=" * 60)
-
-    print(f"\nTotal samples: {len(speed):,}")
-
-    # 速度分析
-    print(f"\n[Speed Distribution]")
-    print(f"  Mean: {np.mean(speed):.4f}")
-    print(f"  Std:  {np.std(speed):.4f}")
-    print(f"  Min:  {np.min(speed):.4f}")
-    print(f"  Max:  {np.max(speed):.4f}")
-    print(f"  Median: {np.median(speed):.4f}")
-
-    # 按速度区间统计
-    speed_bins = [
-        (0, 0.2, "Very Low (0-0.2)"),
-        (0.2, 0.4, "Low (0.2-0.4)"),
-        (0.4, 0.6, "Medium (0.4-0.6)"),
-        (0.6, 0.8, "High (0.6-0.8)"),
-        (0.8, 1.0, "Very High (0.8-1.0)")
-    ]
-
-    print(f"\n  Speed Range Distribution:")
-    for low, high, label in speed_bins:
-        count = np.sum((speed >= low) & (speed < high))
-        pct = count / len(speed) * 100
-        print(f"    {label}: {count:,} ({pct:.1f}%)")
-
-    # 转角分析
-    print(f"\n[Steering Distribution]")
-    print(f"  Mean: {np.mean(steering):.4f}")
-    print(f"  Std:  {np.std(steering):.4f}")
-    print(f"  Min:  {np.min(steering):.4f}")
-    print(f"  Max:  {np.max(steering):.4f}")
-
-    # 按转角区间统计
-    steering_bins = [
-        (-1, -0.5, "Hard Left (-1 to -0.5)"),
-        (-0.5, -0.2, "Medium Left (-0.5 to -0.2)"),
-        (-0.2, 0.2, "Straight (-0.2 to 0.2)"),
-        (0.2, 0.5, "Medium Right (0.2 to 0.5)"),
-        (0.5, 1.0, "Hard Right (0.5 to 1.0)")
-    ]
-
-    print(f"\n  Steering Range Distribution:")
-    for low, high, label in steering_bins:
-        count = np.sum((steering >= low) & (steering < high))
-        pct = count / len(steering) * 100
-        print(f"    {label}: {count:,} ({pct:.1f}%)")
-
-    # 速度与转角的相关性
-    correlation = np.corrcoef(speed, steering)[0, 1]
-    print(f"\n[Correlation]")
-    print(f"  Speed-Steering Correlation: {correlation:.4f}")
-    print(f"  (Negative value indicates inverse relationship)")
-
-    print("\n" + "=" * 60)
 
 
 def main():
-    """
-    主函数：生成数据并绘制热力图
-    """
-    print("=" * 60)
-    print("Autonomous Driving Data Visualization")
-    print("Speed vs Steering Angle Heatmap Generator")
-    print("=" * 60)
+    config = [
+        {
+            "name": "倒车/负向",
+            "speed_range": (-0.1, 0.05),
+            "count": 500,
+            "speed_dist": "uniform",
+            "steer_std": 0,  # 负速度下会严格保持这个宽度，不被正速度干扰
+            "steer_mean": 0.0
+        },
+        {
+            "name": "极低速",
+            "speed_range": (0.0, 0.4),
+            "count": 2000,
+            "speed_dist": "normal",
+            "steer_std": 0.04,
+            "steer_mean": 0.01
+        },
+        {
+            "name": "城市/弯道",
+            "speed_range": (0.1, 0.6),
+            "count": 1000,
+            "steer_std": 0.35,
+            "steer_mean": 0.01
+        },
+        {
+            "name": "中速弯道",
+            "speed_range": (0.25, 0.6),
+            "count": 4000,
+            "steer_std": 0.35,
+            "steer_mean": 0.01
+        },
+        {
+            "name": "高速巡航",
+            "speed_range": (0.4, 0.7),
+            "count": 5000,
+            "steer_std": 0.25,
+            "steer_mean": -0.01
+        },
+        {
+            "name": "超高速直行",
+            "speed_range": (0.5, 1.0),
+            "count": 4000,
+            "steer_std": 0.02,
+            "steer_mean": 0.0
+        }
+    ]
 
-    # 生成符合自动驾驶分布的合成数据
-    print("\n[1/4] Generating synthetic autonomous driving data...")
-    speed, steering = generate_autonomous_driving_data(num_samples=50000, seed=42)
-    print(f"      Generated {len(speed):,} data points")
-
-    # 分析数据分布
-    print("\n[2/4] Analyzing data distribution...")
-    analyze_data_distribution(speed, steering)
-
-    # 创建hexbin热力图
-    print("\n[3/4] Creating hexbin heatmap...")
-    output1 = create_heatmap(speed, steering, 'speed_steering_heatmap.png')
-
-    # 创建2D直方图热力图
-    print("\n[4/4] Creating 2D histogram heatmap...")
-    output2 = create_histogram_2d(speed, steering, 'speed_steering_hist2d.png')
-
-    print("\n" + "=" * 60)
-    print("Visualization Complete!")
-    print("=" * 60)
-    print(f"\nOutput files:")
-    print(f"  1. {output1}")
-    print(f"  2. {output2}")
-    print("\nData points are concentrated where the color is darker.")
-    print("The funnel shape shows the safe driving envelope:")
-    print("  - High speed → Small steering angles only")
-    print("  - Low speed → Full range of steering angles")
+    print("开始生成混合逻辑数据...")
+    speed, steer = generate_merged_driving_data(config)
+    plot_merged_visualization(speed, steer)
 
 
 if __name__ == "__main__":
