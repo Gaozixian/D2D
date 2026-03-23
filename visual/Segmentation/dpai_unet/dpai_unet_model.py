@@ -229,16 +229,6 @@ class DPAI_UNet_Segmentation(nn.Module):
         target_size = size if size is not None else (x.size(2), x.size(3))
         return F.interpolate(decoder_out, size=target_size, mode='bilinear', align_corners=False)
 
-if __name__ == '__main__':
-    # 简单的测试模块 (可选保留)
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # model = DPAI_UNet_Segmentation(num_classes=19, pretrained=False).to(device)
-    # dummy_input = torch.randn(2, 3, 512, 1024).to(device)
-    # print(f"Input shape: {dummy_input.shape}")
-    # out = model(dummy_input)
-    # print(f"Output shape: {out.shape}")  # 应该输出 [2, 19, 512, 1024]
-    pass
-
 # ==================== 4. 数据处理与损失函数 (从 DPAI2.0.ipynb 拷贝) ====================
 import os
 import random
