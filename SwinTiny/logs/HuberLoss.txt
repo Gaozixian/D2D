@@ -1,0 +1,3 @@
+Epoch 1: Total=3.672763, Vel=15.366322, Steer=10.216873
+Epoch 2: Total=-55.424533, Vel=7.116311, Steer=5.291809
+Epoch 3: Total=-102.598331, Vel=6.216265, Steer=4.932700
